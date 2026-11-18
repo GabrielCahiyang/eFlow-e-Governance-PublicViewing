@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
-  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Download,
   ExternalLink,
   FileText,
   History,
   LoaderCircle,
-  ShieldAlert,
+  RefreshCw,
   ShieldCheck,
 } from "lucide-react";
 import { verifyCertificateOnAmoy } from "../services/amoyProof";
@@ -32,7 +33,7 @@ import {
   shortenHash,
 } from "../utils/formatters";
 
-type DetailTab = "overview" | "tasks" | "finances" | "files" | "audit";
+type DetailTab = "tasks" | "overview" | "finances" | "files" | "audit";
 
 type RowRecord = Record<string, unknown>;
 
@@ -76,11 +77,12 @@ export function ProjectRecordView({
   } | null>(null);
   const [proof, setProof] = useState<AmoyProofReport | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [proofOpen, setProofOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fileError, setFileError] = useState("");
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const [activeTab, setActiveTab] = useState<DetailTab>("tasks");
 
   useEffect(() => {
     let active = true;
@@ -88,6 +90,7 @@ export function ProjectRecordView({
     setError("");
     setFileError("");
     setProof(null);
+    setProofOpen(false);
     setArchive(null);
     setCertificate(null);
 
@@ -99,7 +102,6 @@ export function ProjectRecordView({
           if (active) setVersions(list);
         });
 
-        // Automatically run live Polygon Amoy cryptographic verification alongside archive load
         setVerifying(true);
         void verifyCertificateOnAmoy(cert)
           .then((report) => {
@@ -177,34 +179,36 @@ export function ProjectRecordView({
     [receipts],
   );
 
+  const resolveOfficeLabel = (row: RowRecord): string => {
+    const named = row.office_name ?? row.name;
+    if (typeof named === "string" && named.trim()) return named;
+    if (row.office_id && row.office_id === office.id && typeof office.name === "string") {
+      return office.name;
+    }
+    return textVal(office.name ?? row.office_id);
+  };
+
   return (
-    <div style={{ display: "grid", gap: "20px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "12px",
-          flexWrap: "wrap",
-        }}
-      >
-        <button type="button" className="btn" onClick={onBack}>
-          <ArrowLeft size={14} />
-          Back to Sealed Registry
+    <div className="record-shell">
+      <div className="record-topbar">
+        <button type="button" className="record-back-btn" onClick={onBack}>
+          <ArrowLeft size={14} aria-hidden="true" />
+          <span>All projects</span>
         </button>
 
         {versions.length > 1 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 600 }}>
-              <History size={13} style={{ verticalAlign: "-2px", marginRight: "4px" }} />
-              Sealed versions:
+          <div className="record-versions">
+            <span>
+              <History size={13} aria-hidden="true" />
+              Versions
             </span>
             {versions.map((ver) => (
               <button
                 key={ver.id}
                 type="button"
-                className={`btn ${ver.id === certificate?.id ? "btn-primary" : ""}`}
-                style={{ height: "30px", padding: "0 10px", fontSize: "12px" }}
+                className={`record-version-btn tabular-nums ${
+                  ver.id === certificate?.id ? "is-current" : ""
+                }`}
                 onClick={() => onOpenCertificate(ver.id)}
               >
                 v{ver.version}
@@ -216,218 +220,207 @@ export function ProjectRecordView({
 
       {loading && (
         <div className="surface-card empty-state" role="status">
-          <LoaderCircle size={28} />
-          <p>Fetching certificate, verifying archive SHA-256, and querying Polygon Amoy…</p>
+          <LoaderCircle size={24} className="spin-icon" />
+          <p>Loading sealed project record…</p>
         </div>
       )}
 
       {error && (
         <div className="alert-box is-danger" role="alert">
-          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
+          <AlertTriangle size={17} style={{ flexShrink: 0, marginTop: "2px" }} />
           <div>
-            <strong>Certificate / Archive Verification Issue</strong>
+            <strong>Could not load record</strong>
             <div>{error}</div>
           </div>
         </div>
       )}
 
       {certificate && (
-        <>
-          <section className="surface-card" style={{ padding: "22px" }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: "16px",
-                flexWrap: "wrap",
-                marginBottom: "18px",
-              }}
-            >
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span className="tag tag-teal">
-                    <ShieldCheck size={13} />
-                    Polygon Amoy · Chain {certificate.chain_id}
-                  </span>
-                  <span className="tag">Version {certificate.version}</span>
-                  {proof && (
-                    <span className={`tag ${proof.verified ? "tag-success" : "tag-danger"}`}>
-                      {proof.verified ? "On-Chain Proof Verified" : "Chain Verification Failed"}
-                    </span>
-                  )}
-                </div>
-                <h1 style={{ margin: "10px 0 4px", fontSize: "24px", letterSpacing: "-0.02em" }}>
-                  {certificate.title}
-                </h1>
-                <p style={{ margin: 0, fontSize: "13px", color: "var(--text-secondary)" }}>
-                  Sealed {formatDateTime(certificate.sealed_at)} · Public Archive Version{" "}
-                  {certificate.version}
-                </p>
-              </div>
+        <section className="surface-card workspace-record-card">
+          <header className="workspace-record-header">
+            <div className="workspace-record-main">
+              {archive && (
+                <span className="workspace-office-label">
+                  {textVal(office.name)}
+                </span>
+              )}
 
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                <a
-                  className="btn btn-teal"
-                  href={polygonScanTxUrl(certificate.tx_hash)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View on PolygonScan
-                  <ExternalLink size={14} />
-                </a>
+              <h1>{certificate.title}</h1>
+
+              <div className="workspace-status-row">
+                {verifying ? (
+                  <span className="status-tag">Checking authenticity…</span>
+                ) : error || (proof && !proof.verified) ? (
+                  <span className="status-tag status-tag--danger">
+                    Modified · Mismatch
+                  </span>
+                ) : proof?.verified && archive ? (
+                  <span className="status-tag status-tag--positive">
+                    Original · Unchanged
+                  </span>
+                ) : (
+                  <span className="status-tag status-tag--teal">Public Record</span>
+                )}
+                <span className="status-tag tabular-nums">v{certificate.version}</span>
                 {archive && (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() =>
-                      saveBlob(
-                        new Blob([archive.text], { type: "application/json" }),
-                        `eflow-project-v${certificate.version}-${certificate.id.slice(0, 8)}.json`,
-                      )
-                    }
-                  >
-                    <Download size={14} />
-                    Download JSON Record
-                  </button>
+                  <span className="status-tag">
+                    {sectionLabel(textVal(project.status))}
+                  </span>
                 )}
               </div>
+
+              <p className="workspace-record-meta tabular-nums">
+                Sealed {formatDateTime(certificate.sealed_at)}
+                {archive
+                  ? ` · ${tasks.length} ${tasks.length === 1 ? "task" : "tasks"} · Funding ${money(totalFunded)}`
+                  : ""}
+              </p>
             </div>
 
-            {archive?.manifest.correction_note && (
-              <div className="alert-box is-warning" style={{ marginBottom: "18px" }}>
-                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
-                <div>
-                  <strong>Correction Notice (Version {certificate.version})</strong>
-                  <div>{archive.manifest.correction_note}</div>
-                </div>
-              </div>
-            )}
+            <div className="record-header-actions">
+              <a
+                className="btn btn-sm btn-primary"
+                href={polygonScanTxUrl(certificate.tx_hash)}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                PolygonScan
+                <ExternalLink size={13} aria-hidden="true" />
+              </a>
 
-            <div className="detail-grid">
-              <div className="meta-cell">
-                <small>Transaction Hash</small>
-                <a
-                  className="chain-link mono"
-                  href={polygonScanTxUrl(certificate.tx_hash)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              {archive && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    saveBlob(
+                      new Blob([archive.text], { type: "application/json" }),
+                      `eflow-project-v${certificate.version}-${certificate.id.slice(0, 8)}.json`,
+                    )
+                  }
                 >
-                  {shortenHash(certificate.tx_hash, 14, 12)}
-                </a>
-              </div>
-              <div className="meta-cell">
-                <small>Finalized Block</small>
-                <a
-                  className="chain-link mono tabular-nums"
-                  href={polygonScanBlockUrl(certificate.block_number)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  #{certificate.block_number.toLocaleString()}
-                </a>
-              </div>
-              <div className="meta-cell">
-                <small>Manifest SHA-256</small>
-                <code title={certificate.manifest_hash}>
-                  {shortenHash(certificate.manifest_hash, 14, 12)}
-                </code>
-              </div>
-              <div className="meta-cell">
-                <small>Registry Contract</small>
-                <a
-                  className="chain-link mono"
-                  href={polygonScanAddressUrl(certificate.contract_address)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {shortenHash(certificate.contract_address, 10, 8)}
-                </a>
-              </div>
-            </div>
-          </section>
+                  <Download size={13} aria-hidden="true" />
+                  JSON
+                </button>
+              )}
 
-          <section className="surface-card" style={{ padding: "20px 22px" }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "12px",
-                flexWrap: "wrap",
-                marginBottom: "14px",
-              }}
-            >
-              <div>
-                <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
-                  Live Polygon Amoy Cryptographic Verification
-                </h2>
-                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "var(--text-secondary)" }}>
-                  Verified directly in your browser against{" "}
-                  <span className="mono">https://polygon-amoy.drpc.org</span> and browser SHA-256.
-                </p>
-              </div>
               <button
                 type="button"
-                className="btn"
-                disabled={verifying}
-                onClick={rerunAmoyVerification}
+                className="btn btn-sm"
+                aria-expanded={proofOpen}
+                onClick={() => setProofOpen((prev) => !prev)}
               >
-                {verifying ? "Checking Polygon Amoy…" : "Re-verify On-Chain Proof"}
+                <ShieldCheck size={13} aria-hidden="true" />
+                <span>Proof</span>
+                {proofOpen ? (
+                  <ChevronUp size={13} aria-hidden="true" />
+                ) : (
+                  <ChevronDown size={13} aria-hidden="true" />
+                )}
               </button>
             </div>
+          </header>
 
-            {proof?.error && (
-              <div className="alert-box is-danger" role="alert" style={{ marginBottom: "12px" }}>
-                <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: "2px" }} />
+          {archive?.manifest.correction_note && (
+            <div className="alert-box is-warning" style={{ margin: "16px 24px 0" }}>
+              <AlertTriangle size={17} style={{ flexShrink: 0, marginTop: "2px" }} />
+              <div>
+                <strong>Correction Notice (Version {certificate.version})</strong>
+                <div>{archive.manifest.correction_note}</div>
+              </div>
+            </div>
+          )}
+
+          {proofOpen && (
+            <section className="record-proof-drawer" aria-label="On-chain cryptographic proof">
+              <div className="proof-drawer-meta">
                 <div>
-                  <strong>Proof verification error:</strong> {proof.error}
+                  <small>Transaction Hash</small>
+                  <a
+                    className="chain-link mono"
+                    href={polygonScanTxUrl(certificate.tx_hash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {shortenHash(certificate.tx_hash, 12, 10)}
+                  </a>
+                </div>
+                <div>
+                  <small>Finalized Block</small>
+                  <a
+                    className="chain-link mono tabular-nums"
+                    href={polygonScanBlockUrl(certificate.block_number)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    #{certificate.block_number.toLocaleString()}
+                  </a>
+                </div>
+                <div>
+                  <small>Manifest SHA-256</small>
+                  <code className="mono" title={certificate.manifest_hash}>
+                    {shortenHash(certificate.manifest_hash, 12, 10)}
+                  </code>
+                </div>
+                <div>
+                  <small>Registry Contract</small>
+                  <a
+                    className="chain-link mono"
+                    href={polygonScanAddressUrl(certificate.contract_address)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {shortenHash(certificate.contract_address, 10, 8)}
+                  </a>
+                </div>
+                <div className="proof-drawer-reverify">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={verifying}
+                    onClick={rerunAmoyVerification}
+                  >
+                    <RefreshCw size={12} className={verifying ? "spin-icon" : ""} aria-hidden="true" />
+                    {verifying ? "Checking…" : "Re-verify"}
+                  </button>
                 </div>
               </div>
-            )}
 
-            <div className="proof-checklist">
-              {archive && (
-                <div className="proof-step">
-                  <CheckCircle2 size={18} color="var(--success)" style={{ flexShrink: 0 }} />
-                  <div>
-                    <strong>Public Archive JSON SHA-256 Integrity</strong>
-                    <span>
-                      Computed browser SHA-256 matches certificate manifest hash{" "}
-                      <code className="mono">{shortenHash(certificate.manifest_hash, 12, 10)}</code>.
-                    </span>
-                  </div>
+              {proof?.error && (
+                <div className="alert-box is-danger" role="alert">
+                  <span>{proof.error}</span>
                 </div>
               )}
 
-              {proof?.steps.map((step) => (
-                <div key={step.id} className="proof-step">
-                  {step.status === "passed" ? (
-                    <CheckCircle2 size={18} color="var(--success)" style={{ flexShrink: 0 }} />
-                  ) : (
-                    <ShieldAlert size={18} color="var(--danger)" style={{ flexShrink: 0 }} />
-                  )}
-                  <div>
-                    <strong>{step.label}</strong>
-                    <span>{step.detail}</span>
+              <div className="proof-inline-checks">
+                {archive ? (
+                  <div className="proof-inline-row">
+                    <span>
+                      <strong>Manifest SHA-256</strong> matches archived JSON digest{" "}
+                      <code className="mono">{shortenHash(certificate.manifest_hash, 8, 6)}</code>
+                    </span>
                   </div>
-                </div>
-              ))}
-            </div>
-          </section>
+                ) : error ? (
+                  <div className="proof-inline-row">
+                    <span>
+                      <strong>Manifest SHA-256 Failed</strong> — {error}
+                    </span>
+                  </div>
+                ) : null}
+                {proof?.steps.map((step) => (
+                  <div key={step.id} className="proof-inline-row">
+                    <span>
+                      <strong>{step.label}</strong> — {step.detail}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {archive && (
-            <section className="surface-card">
+            <>
               <div className="section-tabs" role="tablist" aria-label="Sealed project sections">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === "overview"}
-                  className={`section-tab ${activeTab === "overview" ? "is-active" : ""}`}
-                  onClick={() => setActiveTab("overview")}
-                >
-                  Overview &amp; Offices
-                </button>
                 <button
                   type="button"
                   role="tab"
@@ -435,7 +428,16 @@ export function ProjectRecordView({
                   className={`section-tab ${activeTab === "tasks" ? "is-active" : ""}`}
                   onClick={() => setActiveTab("tasks")}
                 >
-                  Tasks &amp; Subtasks ({tasks.length})
+                  Main table ({tasks.length})
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "overview"}
+                  className={`section-tab ${activeTab === "overview" ? "is-active" : ""}`}
+                  onClick={() => setActiveTab("overview")}
+                >
+                  Overview
                 </button>
                 <button
                   type="button"
@@ -444,7 +446,7 @@ export function ProjectRecordView({
                   className={`section-tab ${activeTab === "finances" ? "is-active" : ""}`}
                   onClick={() => setActiveTab("finances")}
                 >
-                  Finances &amp; Receipts
+                  Finances
                 </button>
                 <button
                   type="button"
@@ -453,7 +455,7 @@ export function ProjectRecordView({
                   className={`section-tab ${activeTab === "files" ? "is-active" : ""}`}
                   onClick={() => setActiveTab("files")}
                 >
-                  Evidence &amp; Files ({archive.manifest.files.length})
+                  Files ({archive.manifest.files.length})
                 </button>
                 <button
                   type="button"
@@ -466,43 +468,156 @@ export function ProjectRecordView({
                 </button>
               </div>
 
-              <div style={{ padding: "22px" }}>
-                {activeTab === "overview" && (
-                  <div style={{ display: "grid", gap: "20px" }}>
-                    <div className="detail-grid">
-                      <div className="meta-cell">
-                        <small>Lead Office</small>
-                        <strong>{textVal(office.name)}</strong>
-                      </div>
-                      <div className="meta-cell">
-                        <small>Project Status at Seal</small>
-                        <strong>{sectionLabel(textVal(project.status))}</strong>
-                      </div>
-                      <div className="meta-cell">
-                        <small>Timeline</small>
-                        <strong>
-                          {formatDate(project.start_date as string)} →{" "}
-                          {formatDate(project.due_date as string)}
-                        </strong>
-                      </div>
-                      <div className="meta-cell">
-                        <small>Completed At</small>
-                        <strong>{formatDateTime(project.completed_at as string)}</strong>
-                      </div>
-                    </div>
-
-                    {typeof project.description === "string" && project.description.trim() && (
-                      <div className="meta-cell">
-                        <small>Project Scope / Description</small>
-                        <p style={{ margin: "6px 0 0", fontSize: "13px", lineHeight: 1.6 }}>
-                          {project.description}
-                        </p>
+              <div className="record-tab-body">
+                {activeTab === "tasks" && (
+                  <div className="record-tab-stack">
+                    {tasks.length === 0 ? (
+                      <p className="record-empty-note">
+                        No tasks recorded in this sealed snapshot.
+                      </p>
+                    ) : (
+                      <div className="ledger-table-wrap">
+                        <table className="ledger-table">
+                          <thead>
+                            <tr>
+                              <th>Task</th>
+                              <th>Owner</th>
+                              <th>Status</th>
+                              <th>Priority</th>
+                              <th>Due date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tasks.map((task, idx) => (
+                              <tr key={String(task.id ?? idx)}>
+                                <td>
+                                  <strong className="ledger-project-title">
+                                    {textVal(task.title)}
+                                  </strong>
+                                  {typeof task.description === "string" &&
+                                    task.description.trim() && (
+                                      <div className="table-subnote">
+                                        {task.description}
+                                      </div>
+                                    )}
+                                </td>
+                                <td>{textVal(task.assignee_name)}</td>
+                                <td>
+                                  <span className="status-tag">
+                                    {sectionLabel(textVal(task.status))}
+                                  </span>
+                                </td>
+                                <td>{sectionLabel(textVal(task.priority))}</td>
+                                <td className="tabular-nums">
+                                  {formatDate((task.due_date ?? task.deadline) as string)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
 
+                    {subtasks.length > 0 && (
+                      <div className="record-subtable">
+                        <h3>Subtasks ({subtasks.length})</h3>
+                        <div className="ledger-table-wrap">
+                          <table className="ledger-table">
+                            <thead>
+                              <tr>
+                                <th>Subtask</th>
+                                <th>Assigned Member</th>
+                                <th>Status</th>
+                                <th style={{ textAlign: "right" }}>Budget Cap</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {subtasks.map((sub, idx) => (
+                                <tr key={String(sub.id ?? idx)}>
+                                  <td>{textVal(sub.title)}</td>
+                                  <td>{textVal(sub.assignee_name)}</td>
+                                  <td>{sectionLabel(textVal(sub.status))}</td>
+                                  <td
+                                    className="tabular-nums"
+                                    style={{ textAlign: "right" }}
+                                  >
+                                    {sub.budget_cap != null
+                                      ? money(sub.budget_cap)
+                                      : "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === "overview" && (
+                  <div className="record-tab-stack">
+                    <div className="ledger-table-wrap">
+                      <table className="ledger-table">
+                        <tbody>
+                          <tr>
+                            <th style={{ width: "220px" }}>Lead Office</th>
+                            <td>{textVal(office.name)}</td>
+                          </tr>
+                          <tr>
+                            <th>Status at Seal</th>
+                            <td>{sectionLabel(textVal(project.status))}</td>
+                          </tr>
+                          <tr>
+                            <th>Timeline</th>
+                            <td className="tabular-nums">
+                              {formatDate(project.start_date as string)} →{" "}
+                              {formatDate(project.due_date as string)}
+                            </td>
+                          </tr>
+                          <tr>
+                            <th>Completed At</th>
+                            <td className="tabular-nums">
+                              {formatDateTime(project.completed_at as string)}
+                            </td>
+                          </tr>
+                          {typeof project.description === "string" &&
+                            project.description.trim() && (
+                              <tr>
+                                <th>Scope / Description</th>
+                                <td>{project.description}</td>
+                              </tr>
+                            )}
+                          <tr>
+                            <th>Participating Offices</th>
+                            <td>
+                              {offices.length === 0
+                                ? textVal(office.name)
+                                : offices.map(resolveOfficeLabel).join(", ")}
+                            </td>
+                          </tr>
+                          <tr>
+                            <th>Project Roster ({members.length})</th>
+                            <td>
+                              {members.length === 0
+                                ? "No member records"
+                                : members
+                                    .map(
+                                      (m) =>
+                                        `${textVal(m.full_name)} (${sectionLabel(
+                                          textVal(m.role),
+                                        )})`,
+                                    )
+                                    .join(" · ")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
                     {milestones.length > 0 && (
-                      <div>
-                        <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>Milestones</h3>
+                      <div className="record-subtable">
+                        <h3>Milestones ({milestones.length})</h3>
                         <div className="ledger-table-wrap">
                           <table className="ledger-table">
                             <thead>
@@ -517,128 +632,11 @@ export function ProjectRecordView({
                                 <tr key={String(m.id ?? idx)}>
                                   <td>{textVal(m.title)}</td>
                                   <td className="tabular-nums">
-                                    {formatDate((m.due_date ?? m.target_date) as string)}
-                                  </td>
-                                  <td>{sectionLabel(textVal(m.status))}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {(offices.length > 0 || members.length > 0) && (
-                      <div className="detail-grid">
-                        <div className="meta-cell">
-                          <small>Offices Involved ({offices.length})</small>
-                          <div style={{ marginTop: "8px", display: "grid", gap: "6px", fontSize: "13px" }}>
-                            {offices.length === 0
-                              ? textVal(office.name)
-                              : offices.map((o, idx) => (
-                                  <div key={String(o.id ?? idx)}>
-                                    {textVal(o.office_name ?? o.name ?? o.office_id)}
-                                  </div>
-                                ))}
-                          </div>
-                        </div>
-                        <div className="meta-cell">
-                          <small>Project Roster ({members.length})</small>
-                          <div style={{ marginTop: "8px", display: "grid", gap: "6px", fontSize: "13px" }}>
-                            {members.length === 0
-                              ? "No member records"
-                              : members.map((m, idx) => (
-                                  <div key={String(m.user_id ?? idx)}>
-                                    {textVal(m.full_name)} ·{" "}
-                                    <span style={{ color: "var(--text-muted)" }}>
-                                      {sectionLabel(textVal(m.role))}
-                                    </span>
-                                  </div>
-                                ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === "tasks" && (
-                  <div style={{ display: "grid", gap: "20px" }}>
-                    <div>
-                      <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                        Project Tasks ({tasks.length})
-                      </h3>
-                      {tasks.length === 0 ? (
-                        <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-                          No tasks recorded in this sealed snapshot.
-                        </p>
-                      ) : (
-                        <div className="ledger-table-wrap">
-                          <table className="ledger-table">
-                            <thead>
-                              <tr>
-                                <th>Task</th>
-                                <th>Task Lead</th>
-                                <th>Status</th>
-                                <th>Priority</th>
-                                <th>Due Date</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tasks.map((task, idx) => (
-                                <tr key={String(task.id ?? idx)}>
-                                  <td>
-                                    <strong>{textVal(task.title)}</strong>
-                                    {typeof task.description === "string" && task.description && (
-                                      <div
-                                        style={{
-                                          fontSize: "12px",
-                                          color: "var(--text-secondary)",
-                                          marginTop: "3px",
-                                        }}
-                                      >
-                                        {task.description}
-                                      </div>
+                                    {formatDate(
+                                      (m.due_date ?? m.target_date) as string,
                                     )}
                                   </td>
-                                  <td>{textVal(task.assignee_name)}</td>
-                                  <td>{sectionLabel(textVal(task.status))}</td>
-                                  <td>{sectionLabel(textVal(task.priority))}</td>
-                                  <td className="tabular-nums">
-                                    {formatDate((task.due_date ?? task.deadline) as string)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    {subtasks.length > 0 && (
-                      <div>
-                        <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                          Subtasks ({subtasks.length})
-                        </h3>
-                        <div className="ledger-table-wrap">
-                          <table className="ledger-table">
-                            <thead>
-                              <tr>
-                                <th>Subtask</th>
-                                <th>Assigned Member</th>
-                                <th>Status</th>
-                                <th>Budget Cap</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {subtasks.map((sub, idx) => (
-                                <tr key={String(sub.id ?? idx)}>
-                                  <td>{textVal(sub.title)}</td>
-                                  <td>{textVal(sub.assignee_name)}</td>
-                                  <td>{sectionLabel(textVal(sub.status))}</td>
-                                  <td className="tabular-nums">
-                                    {sub.budget_cap != null ? money(sub.budget_cap) : "—"}
-                                  </td>
+                                  <td>{sectionLabel(textVal(m.status))}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -650,39 +648,29 @@ export function ProjectRecordView({
                 )}
 
                 {activeTab === "finances" && (
-                  <div style={{ display: "grid", gap: "22px" }}>
-                    <div className="detail-grid">
-                      <div className="meta-cell">
-                        <small>Total Committed Funding</small>
-                        <strong className="tabular-nums" style={{ fontSize: "18px" }}>
-                          {money(totalFunded)}
-                        </strong>
+                  <div className="record-tab-stack">
+                    <div className="record-finance-strip">
+                      <div>
+                        <small>Committed Funding</small>
+                        <strong className="tabular-nums">{money(totalFunded)}</strong>
                       </div>
-                      <div className="meta-cell">
+                      <div>
                         <small>Cash Released ({cashReleases.length})</small>
-                        <strong className="tabular-nums" style={{ fontSize: "18px" }}>
-                          {money(totalReleased)}
-                        </strong>
+                        <strong className="tabular-nums">{money(totalReleased)}</strong>
                       </div>
-                      <div className="meta-cell">
-                        <small>Liquidated Receipts ({receipts.length})</small>
-                        <strong className="tabular-nums" style={{ fontSize: "18px" }}>
-                          {money(totalLiquidated)}
-                        </strong>
+                      <div>
+                        <small>Liquidated ({receipts.length})</small>
+                        <strong className="tabular-nums">{money(totalLiquidated)}</strong>
                       </div>
-                      <div className="meta-cell">
-                        <small>Task Budget Allocations</small>
-                        <strong className="tabular-nums" style={{ fontSize: "18px" }}>
-                          {allocations.length}
-                        </strong>
+                      <div>
+                        <small>Task Allocations</small>
+                        <strong className="tabular-nums">{allocations.length}</strong>
                       </div>
                     </div>
 
                     {funding.length > 0 && (
-                      <div>
-                        <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                          Budget Account Funding ({funding.length})
-                        </h3>
+                      <div className="record-subtable">
+                        <h3>Budget Accounts ({funding.length})</h3>
                         <div className="ledger-table-wrap">
                           <table className="ledger-table">
                             <thead>
@@ -695,11 +683,22 @@ export function ProjectRecordView({
                             <tbody>
                               {funding.map((f, idx) => (
                                 <tr key={String(f.id ?? idx)}>
-                                  <td>{textVal(f.account_name ?? f.section_name ?? f.partition_id)}</td>
-                                  <td className="tabular-nums" style={{ textAlign: "right" }}>
+                                  <td>
+                                    {textVal(
+                                      f.account_name ??
+                                        f.section_name ??
+                                        f.partition_id,
+                                    )}
+                                  </td>
+                                  <td
+                                    className="tabular-nums"
+                                    style={{ textAlign: "right" }}
+                                  >
                                     {money(f.amount ?? f.allocated_amount)}
                                   </td>
-                                  <td>{sectionLabel(textVal(f.status ?? "active"))}</td>
+                                  <td>
+                                    {sectionLabel(textVal(f.status ?? "active"))}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -709,10 +708,10 @@ export function ProjectRecordView({
                     )}
 
                     {cashRequests.length > 0 && (
-                      <div>
-                        <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                          Cash Requests &amp; Liquidations ({cashRequests.length} requests ·{" "}
-                          {liquidations.length} liquidations)
+                      <div className="record-subtable">
+                        <h3>
+                          Cash Requests &amp; Liquidations ({cashRequests.length} ·{" "}
+                          {liquidations.length})
                         </h3>
                         <div className="ledger-table-wrap">
                           <table className="ledger-table">
@@ -727,9 +726,14 @@ export function ProjectRecordView({
                             <tbody>
                               {cashRequests.map((req, idx) => (
                                 <tr key={String(req.id ?? idx)}>
-                                  <td className="mono">{textVal(req.request_number ?? req.id)}</td>
+                                  <td className="mono">
+                                    {textVal(req.request_number ?? req.id)}
+                                  </td>
                                   <td>{textVal(req.purpose)}</td>
-                                  <td className="tabular-nums" style={{ textAlign: "right" }}>
+                                  <td
+                                    className="tabular-nums"
+                                    style={{ textAlign: "right" }}
+                                  >
                                     {money(req.amount)}
                                   </td>
                                   <td>{sectionLabel(textVal(req.status))}</td>
@@ -742,10 +746,8 @@ export function ProjectRecordView({
                     )}
 
                     {receipts.length > 0 && (
-                      <div>
-                        <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                          Verified Receipts ({receipts.length})
-                        </h3>
+                      <div className="record-subtable">
+                        <h3>Verified Receipts ({receipts.length})</h3>
                         <div className="ledger-table-wrap">
                           <table className="ledger-table">
                             <thead>
@@ -762,11 +764,19 @@ export function ProjectRecordView({
                                   <td className="mono">
                                     {textVal(rec.receipt_number ?? rec.or_number)}
                                   </td>
-                                  <td>{textVal(rec.vendor_name ?? rec.store_name)}</td>
-                                  <td className="tabular-nums">
-                                    {formatDate((rec.receipt_date ?? rec.created_at) as string)}
+                                  <td>
+                                    {textVal(rec.vendor_name ?? rec.store_name)}
                                   </td>
-                                  <td className="tabular-nums" style={{ textAlign: "right" }}>
+                                  <td className="tabular-nums">
+                                    {formatDate(
+                                      (rec.receipt_date ??
+                                        rec.created_at) as string,
+                                    )}
+                                  </td>
+                                  <td
+                                    className="tabular-nums"
+                                    style={{ textAlign: "right" }}
+                                  >
                                     {money(rec.total_amount ?? rec.amount)}
                                   </td>
                                 </tr>
@@ -780,15 +790,16 @@ export function ProjectRecordView({
                 )}
 
                 {activeTab === "files" && (
-                  <div style={{ display: "grid", gap: "14px" }}>
+                  <div className="record-tab-stack">
                     {fileError && (
-                      <div className="alert-box is-danger" role="alert">
+                      <div className="alert-box is-danger" style={{ margin: "16px" }} role="alert">
                         {fileError}
                       </div>
                     )}
                     {archive.manifest.files.length === 0 ? (
-                      <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-                        No public files or evidence attachments were included in this archive.
+                      <p className="record-empty-note">
+                        No public files or evidence attachments were included in
+                        this archive.
                       </p>
                     ) : (
                       <div className="ledger-table-wrap">
@@ -799,38 +810,42 @@ export function ProjectRecordView({
                               <th>Section</th>
                               <th>Size</th>
                               <th>SHA-256 Digest</th>
-                              <th style={{ textAlign: "right" }}>Verify &amp; Save</th>
+                              <th style={{ textAlign: "right" }}>Download</th>
                             </tr>
                           </thead>
                           <tbody>
                             {archive.manifest.files.map((file, idx) => (
                               <tr key={`${file.sha256}-${idx}`}>
                                 <td>
-                                  <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-                                    <FileText size={15} color="var(--brand-primary)" />
+                                  <div className="file-row-name">
+                                    <FileText
+                                      size={14}
+                                      color="var(--brand-primary)"
+                                      aria-hidden="true"
+                                    />
                                     <strong>{file.name}</strong>
                                   </div>
                                   {file.publication_copy_note && (
-                                    <div
-                                      style={{
-                                        marginTop: "4px",
-                                        fontSize: "12px",
-                                        color: "var(--text-secondary)",
-                                      }}
-                                    >
-                                      Publication note: {file.publication_copy_note}
+                                    <div className="table-subnote">
+                                      {file.publication_copy_note}
                                     </div>
                                   )}
                                 </td>
                                 <td>{sectionLabel(file.section)}</td>
-                                <td className="tabular-nums">{formatBytes(file.size)}</td>
-                                <td className="mono" style={{ fontSize: "12px" }} title={file.sha256}>
-                                  {shortenHash(file.sha256, 12, 10)}
+                                <td className="tabular-nums">
+                                  {formatBytes(file.size)}
+                                </td>
+                                <td
+                                  className="mono"
+                                  style={{ fontSize: "12px" }}
+                                  title={file.sha256}
+                                >
+                                  {shortenHash(file.sha256, 10, 8)}
                                 </td>
                                 <td style={{ textAlign: "right" }}>
                                   <button
                                     type="button"
-                                    className="btn"
+                                    className="btn btn-sm"
                                     disabled={downloadingPath === file.path}
                                     onClick={() => {
                                       setFileError("");
@@ -852,10 +867,10 @@ export function ProjectRecordView({
                                         .finally(() => setDownloadingPath(null));
                                     }}
                                   >
-                                    <Download size={13} />
+                                    <Download size={12} aria-hidden="true" />
                                     {downloadingPath === file.path
-                                      ? "Verifying SHA-256…"
-                                      : "Verify & Download"}
+                                      ? "Verifying…"
+                                      : "Verify & Save"}
                                   </button>
                                 </td>
                               </tr>
@@ -868,12 +883,9 @@ export function ProjectRecordView({
                 )}
 
                 {activeTab === "audit" && (
-                  <div>
-                    <h3 style={{ margin: "0 0 10px", fontSize: "15px" }}>
-                      Sealed Audit Events ({auditEvents.length})
-                    </h3>
+                  <div className="record-tab-stack">
                     {auditEvents.length === 0 ? (
-                      <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                      <p className="record-empty-note">
                         No audit events recorded in this snapshot.
                       </p>
                     ) : (
@@ -884,26 +896,32 @@ export function ProjectRecordView({
                               <th>Timestamp</th>
                               <th>Action</th>
                               <th>Entity</th>
-                              <th>Reason / Actor</th>
+                              <th>Detail</th>
                             </tr>
                           </thead>
                           <tbody>
                             {auditEvents.map((ev, idx) => (
                               <tr key={String(ev.id ?? idx)}>
-                                <td className="tabular-nums" style={{ whiteSpace: "nowrap" }}>
+                                <td
+                                  className="tabular-nums"
+                                  style={{ whiteSpace: "nowrap" }}
+                                >
                                   {formatDateTime(ev.created_at as string)}
                                 </td>
                                 <td>
-                                  <span className="tag">{textVal(ev.action)}</span>
+                                  <span className="status-tag">
+                                    {textVal(ev.action)}
+                                  </span>
                                 </td>
                                 <td>{sectionLabel(textVal(ev.entity_type))}</td>
                                 <td>
                                   <div>{textVal(ev.reason)}</div>
-                                  {typeof ev.actor_name === "string" && ev.actor_name && (
-                                    <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                                      By {ev.actor_name}
-                                    </div>
-                                  )}
+                                  {typeof ev.actor_name === "string" &&
+                                    ev.actor_name && (
+                                      <div className="table-subnote">
+                                        By {ev.actor_name}
+                                      </div>
+                                    )}
                                 </td>
                               </tr>
                             ))}
@@ -914,9 +932,9 @@ export function ProjectRecordView({
                   </div>
                 )}
               </div>
-            </section>
+            </>
           )}
-        </>
+        </section>
       )}
     </div>
   );
